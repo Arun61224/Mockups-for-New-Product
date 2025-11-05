@@ -1,6 +1,7 @@
 import streamlit as st
 from PIL import Image, ImageChops
 import io
+import pillow_heif # HEIC फाइलों को पढ़ने के लिए
 
 def hex_to_rgb(hex_code):
     hex_code = hex_code.lstrip('#')
@@ -41,8 +42,10 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.header("1. Upload Your Files")
-    mockup_file = st.file_uploader("White T-Shirt Mockup (PNG/JPG)", type=["png", "jpg", "jpeg"])
-    print_file = st.file_uploader("Design/Print (Transparent PNG)", type=["png"])
+    mockup_file = st.file_uploader("White T-Shirt Mockup", type=["png", "jpg", "jpeg"])
+    
+    # --- अपडेट: अब HEIC/HEIF फाइलें भी लेगा ---
+    print_file = st.file_uploader("Design/Print (Transparent PNG is best!)", type=["png", "heic", "heif"])
     
     st.header("2. Choose Color")
     hex_code = st.text_input("Hex Code for T-Shirt", "#9E9E16")
@@ -52,7 +55,18 @@ if st.button("🚀 Generate!"):
         with st.spinner("Generating mockup..."):
             try:
                 base_mockup = Image.open(mockup_file)
-                print_design = Image.open(print_file)
+                
+                # --- अपडेट: HEIC फाइल को हैंडल करने का लॉजिक ---
+                if print_file.type == "image/heic" or print_file.type == "image/heif":
+                    heif_file = pillow_heif.read_heif(print_file)
+                    print_design = Image.frombytes(
+                        heif_file.mode, 
+                        heif_file.size, 
+                        heif_file.data,
+                        "raw",
+                    )
+                else:
+                    print_design = Image.open(print_file)
                 
                 colored_base = colorize_mockup(base_mockup, hex_code)
                 
@@ -69,8 +83,18 @@ if st.button("🚀 Generate!"):
                     
                     final_image = colored_base.copy()
                     
-                    final_image.paste(print_resized, (offset_x, offset_y), print_resized)
-                    
+                    # --- !!! मुख्य अपडेट: क्रैश को रोकना !!! ---
+                    # हम चेक करेंगे कि इमेज 'RGBA' (ट्रांसपेरेंट) है या 'RGB' (फ्लैट)
+                    if print_resized.mode == 'RGBA':
+                        # यह सही तरीका है - सिर्फ ट्रांसपेरेंट हिस्से पेस्ट होंगे
+                        final_image.paste(print_resized, (offset_x, offset_y), print_resized.split()[3])
+                    else:
+                        # यह फ्लैट इमेज है (जैसे आपकी गुलाबी टी-शर्ट)
+                        # यह क्रैश नहीं होगा, लेकिन यह पूरा रेक्टेंगल चिपका देगा
+                        st.warning("⚠️ Warning: Your design image is not transparent. Pasting the whole image box.")
+                        final_image.paste(print_resized, (offset_x, offset_y))
+                    # --- अपडेट खत्म ---
+
                     with col2:
                         st.header("🎉 Your New Mockup")
                         st.image(final_image, caption="Generated Mockup", use_column_width=True)
