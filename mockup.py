@@ -1,114 +1,80 @@
 import streamlit as st
-from PIL import Image, ImageChops
-import io
-import pillow_heif # HEIC फाइलों को पढ़ने के लिए
-
-def hex_to_rgb(hex_code):
-    hex_code = hex_code.lstrip('#')
-    if len(hex_code) != 6:
-        st.error("Invalid Hex Code! Please use #RRGGBB format.")
-        return None
-    try:
-        return tuple(int(hex_code[i:i+2], 16) for i in (0, 2, 4))
-    except ValueError:
-        st.error("Invalid Hex Code!")
-        return None
-
-def colorize_mockup(image, hex_code):
-    image = image.convert("RGBA")
-    r, g, b, a = image.split()
-    
-    rgb_image = Image.merge("RGB", (r, g, b))
-    gray_mask = rgb_image.convert("L")
-    
-    shadows_rgb = gray_mask.convert("RGB")
-
-    target_rgb = hex_to_rgb(hex_code)
-    if target_rgb is None:
-        return None
-        
-    color_img = Image.new("RGB", image.size, target_rgb)
-    
-    colored_mockup_rgb = ImageChops.multiply(color_img, shadows_rgb)
-    
-    colored_mockup_rgb.putalpha(a)
-    return colored_mockup_rgb
+import cv2
+import numpy as np
 
 st.set_page_config(layout="wide")
-st.title("👕 T-Shirt Mockup Generator")
-st.write("This app changes your white t-shirt mockup to any color and applies your design.")
+st.title("👕 T-Shirt Print Extractor")
+st.write("Aapki T-shirt ki image se print nikaalne ki koshish karega.")
 
-col1, col2 = st.columns(2)
+# --- Sidebar mein settings ---
+st.sidebar.header("Rang (Color) Settings")
+st.sidebar.info("Yahan par aap us rang ki settings ko adjust kar sakte hain jise aap hatana (remove) chahte hain (jaise T-shirt ka rang).")
 
-with col1:
-    st.header("1. Upload Your Files")
-    mockup_file = st.file_uploader("White T-Shirt Mockup", type=["png", "jpg", "jpeg"])
-    
-    # --- अपडेट: अब HEIC/HEIF फाइलें भी लेगा ---
-    print_file = st.file_uploader("Design/Print (Transparent PNG is best!)", type=["png", "heic", "heif"])
-    
-    st.header("2. Choose Color")
-    hex_code = st.text_input("Hex Code for T-Shirt", "#9E9E16")
+# Image ko HSV (Hue, Saturation, Value) format mein process karna behtar hota hai
+h_min = st.sidebar.slider('Hue Min', 0, 179, 140)
+h_max = st.sidebar.slider('Hue Max', 0, 179, 170)
+s_min = st.sidebar.slider('Saturation Min', 0, 255, 50)
+s_max = st.sidebar.slider('Saturation Max', 0, 255, 255)
+v_min = st.sidebar.slider('Value Min', 0, 255, 50)
+v_max = st.sidebar.slider('Value Max', 0, 255, 255)
 
-if st.button("🚀 Generate!"):
-    if mockup_file and print_file and hex_code:
-        with st.spinner("Generating mockup..."):
-            try:
-                base_mockup = Image.open(mockup_file)
-                
-                # --- अपडेट: HEIC फाइल को हैंडल करने का लॉजिक ---
-                if print_file.type == "image/heic" or print_file.type == "image/heif":
-                    heif_file = pillow_heif.read_heif(print_file)
-                    print_design = Image.frombytes(
-                        heif_file.mode, 
-                        heif_file.size, 
-                        heif_file.data,
-                        "raw",
-                    )
-                else:
-                    print_design = Image.open(print_file)
-                
-                colored_base = colorize_mockup(base_mockup, hex_code)
-                
-                if colored_base:
-                    base_w, base_h = colored_base.size
-                    ratio = (base_w * 0.4) / print_design.width
-                    new_h = int(print_design.height * ratio)
-                    print_resized = print_design.resize((int(base_w * 0.4), new_h), Image.LANCZOS)
-                    
-                    print_w, print_h = print_resized.size
-                    
-                    offset_x = (base_w - print_w) // 2
-                    offset_y = int(base_h * 0.35)
-                    
-                    final_image = colored_base.copy()
-                    
-                    # --- !!! मुख्य अपडेट: क्रैश को रोकना !!! ---
-                    # हम चेक करेंगे कि इमेज 'RGBA' (ट्रांसपेरेंट) है या 'RGB' (फ्लैट)
-                    if print_resized.mode == 'RGBA':
-                        # यह सही तरीका है - सिर्फ ट्रांसपेरेंट हिस्से पेस्ट होंगे
-                        final_image.paste(print_resized, (offset_x, offset_y), print_resized.split()[3])
-                    else:
-                        # यह फ्लैट इमेज है (जैसे आपकी गुलाबी टी-शर्ट)
-                        # यह क्रैश नहीं होगा, लेकिन यह पूरा रेक्टेंगल चिपका देगा
-                        st.warning("⚠️ Warning: Your design image is not transparent. Pasting the whole image box.")
-                        final_image.paste(print_resized, (offset_x, offset_y))
-                    # --- अपडेट खत्म ---
+st.sidebar.header("Noise Reduction Settings")
+open_iter = st.sidebar.slider('Opening Iterations', 0, 10, 1)
+close_iter = st.sidebar.slider('Closing Iterations', 0, 10, 2)
 
-                    with col2:
-                        st.header("🎉 Your New Mockup")
-                        st.image(final_image, caption="Generated Mockup", use_column_width=True)
-                        
-                        buf = io.BytesIO()
-                        final_image.save(buf, format="PNG")
-                        st.download_button(
-                            label="Download Image",
-                            data=buf.getvalue(),
-                            file_name=f"mockup_{hex_code}.png",
-                            mime="image/png"
-                        )
-                        
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
-    else:
-        st.warning("⚠️ Please upload both files and enter a hex code.")
+# --- Main App ---
+uploaded_file = st.file_uploader("Apni T-shirt ki image upload karein", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    # Uploaded file ko OpenCV format mein read karna
+    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+    img = cv2.imdecode(file_bytes, 1) # 1 = cv2.IMREAD_COLOR
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) # Streamlit display ke liye RGB
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.header("Original Image")
+        st.image(img_rgb, caption='Aapki upload ki gayi image', use_column_width=True)
+
+    with col2:
+        st.header("Extracted Print (PNG)")
+        
+        # --- 1. Rang ke liye Range define karna ---
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        lower_range = np.array([h_min, s_min, v_min])
+        upper_range = np.array([h_max, s_max, v_max])
+
+        # --- 2. Mask banana ---
+        mask = cv2.inRange(hsv, lower_range, upper_range)
+
+        # --- 3. Mask ko clean karna (Noise hatane ke liye) ---
+        kernel = np.ones((3, 3), np.uint8)
+        if open_iter > 0:
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=open_iter)
+        if close_iter > 0:
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=close_iter)
+
+        # --- 4. Mask ko Invert karna ---
+        mask_inv = cv2.bitwise_not(mask)
+
+        # --- 5. Transparent PNG banana ---
+        b, g, r = cv2.split(img)
+        alpha = mask_inv
+        png_image = cv2.merge([b, g, r, alpha])
+
+        # Streamlit mein display karna
+        st.image(png_image, caption='Background hatane ke baad', use_column_width=True)
+
+        # --- 6. Download Button banana ---
+        # Image ko memory mein encode karna
+        _, buf = cv2.imencode('.png', png_image)
+        
+        st.download_button(
+            label="Processed PNG Download Karein",
+            data=buf,
+            file_name=f"extracted_{uploaded_file.name}.png",
+            mime="image/png"
+        )
+else:
+    st.info("Kripya shuru karne ke liye ek image file upload karein.")
