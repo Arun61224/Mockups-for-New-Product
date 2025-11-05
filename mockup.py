@@ -4,7 +4,7 @@ import numpy as np
 import colorsys
 from streamlit_cropper import st_cropper
 from PIL import Image
-import io  # <- MOCKUP KO SAVE KARNE KE LIYE NAYA IMPORT
+import io
 
 st.set_page_config(layout="wide")
 st.title("👕 T-Shirt Print Extractor & Mockup Tool")
@@ -38,6 +38,16 @@ st.sidebar.subheader("2. Rang ki Range (Tolerance)")
 h_tolerance = st.sidebar.slider('Hue Tolerance (Rang mein fark)', 0, 90, 15)
 s_tolerance = st.sidebar.slider('Saturation Tolerance (Feeka/Gehra)', 0, 127, 70)
 v_tolerance = st.sidebar.slider('Value Tolerance (Roshni/Andhera)', 0, 127, 70)
+
+# --- YEH LINES MISSING THI ---
+# Tolerance ke hisab se Min aur Max values calculate karna
+h_min = max(0, h - h_tolerance)
+h_max = min(179, h + h_tolerance)
+s_min = max(0, s - s_tolerance)
+s_max = min(255, s + s_tolerance)
+v_min = max(0, v - v_tolerance)
+v_max = min(255, v + v_tolerance)
+# ---------------------------------
 
 st.sidebar.header("Noise Reduction Settings")
 st.sidebar.info("Ye sliders print ke kinaaron aur chhote spots ko saaf karne mein madad karte hain.")
@@ -73,8 +83,8 @@ if uploaded_file is not None:
     
     # --- Background Removal Logic ---
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    lower_range = np.array([h_min, s_min, v_min])
-    upper_range = np.array([h_max, s_max, v_max])
+    lower_range = np.array([h_min, s_min, v_min]) # Ab yeh line kaam karegi
+    upper_range = np.array([h_max, s_max, v_max]) # Yeh line bhi kaam karegi
     mask = cv2.inRange(hsv, lower_range, upper_range)
     kernel = np.ones((3, 3), np.uint8)
     if open_iter > 0:
