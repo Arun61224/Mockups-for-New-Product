@@ -2,7 +2,8 @@ import streamlit as st
 import cv2
 import numpy as np
 import colorsys
-from streamlit_cropper import st_cropper # Nayi library import ki
+from streamlit_cropper import st_cropper
+from PIL import Image # <- YEH NAYA IMPORT HAI
 
 st.set_page_config(layout="wide")
 st.title("👕 T-Shirt Print Extractor")
@@ -55,35 +56,40 @@ if uploaded_file is not None:
     # 1. Image ko read karna
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img_to_crop = cv2.imdecode(file_bytes, 1)
-    img_to_crop_rgb = cv2.cvtColor(img_to_crop, cv2.COLOR_BGR2RGB) # Cropper ke liye RGB
+    img_to_crop_rgb = cv2.cvtColor(img_to_crop, cv2.COLOR_BGR2RGB)
+    
+    # --- YAHAN BADLAAV HAI ---
+    # NumPy array ko PIL Image mein convert karna
+    img_to_crop_pil = Image.fromarray(img_to_crop_rgb)
+    # -------------------------
 
     st.header("2. Design ko Crop Karein")
     st.write("Box ko adjust karke design ko select karein. Cropper ke neeche result dikhega.")
     
     # 2. CROPPER COMPONENT
-    cropped_img_rgb = st_cropper(
-        img_to_crop_rgb, 
+    # Ab hum PIL image ko cropper mein bhej rahe hain
+    cropped_img_pil = st_cropper(
+        img_to_crop_pil, 
         realtime_update=True, 
         box_color='blue', 
-        aspect_ratio=None, # User ko free crop karne dein
-        return_type='image' # Hamein numpy array chahiye
+        aspect_ratio=None, 
+        return_type='image' # Yeh humein ek PIL image hi wapas dega
     )
     
-    # 3. Cropped image ko OpenCV (BGR) format mein wapas convert karna
-    img = cv2.cvtColor(np.array(cropped_img_rgb), cv2.COLOR_RGB2BGR)
+    # 3. Cropped image (jo PIL format mein hai) ko OpenCV (BGR) format mein wapas convert karna
+    img = cv2.cvtColor(np.array(cropped_img_pil), cv2.COLOR_RGB2BGR)
 
     st.header("3. Result")
     col1, col2 = st.columns(2)
 
     with col1:
         st.subheader("Aapki Cropped Image")
-        st.image(cropped_img_rgb, caption='Yeh hissa process hoga', use_column_width=True)
+        st.image(cropped_img_pil, caption='Yeh hissa process hoga', use_column_width=True)
 
     with col2:
         st.subheader("Extracted Print (PNG)")
         
-        # --- Baaki ka process ab CROP ki hui image par chalega ---
-        
+        # Baaki ka process ab CROP ki hui image par chalega
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         lower_range = np.array([h_min, s_min, v_min])
         upper_range = np.array([h_max, s_max, v_max])
