@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import colorsys
 from streamlit_cropper import st_cropper
-from PIL import Image # <- YEH NAYA IMPORT HAI
+from PIL import Image
 
 st.set_page_config(layout="wide")
 st.title("👕 T-Shirt Print Extractor")
@@ -57,26 +57,21 @@ if uploaded_file is not None:
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img_to_crop = cv2.imdecode(file_bytes, 1)
     img_to_crop_rgb = cv2.cvtColor(img_to_crop, cv2.COLOR_BGR2RGB)
-    
-    # --- YAHAN BADLAAV HAI ---
-    # NumPy array ko PIL Image mein convert karna
     img_to_crop_pil = Image.fromarray(img_to_crop_rgb)
-    # -------------------------
 
     st.header("2. Design ko Crop Karein")
     st.write("Box ko adjust karke design ko select karein. Cropper ke neeche result dikhega.")
     
     # 2. CROPPER COMPONENT
-    # Ab hum PIL image ko cropper mein bhej rahe hain
     cropped_img_pil = st_cropper(
         img_to_crop_pil, 
         realtime_update=True, 
         box_color='blue', 
         aspect_ratio=None, 
-        return_type='image' # Yeh humein ek PIL image hi wapas dega
+        return_type='image'
     )
     
-    # 3. Cropped image (jo PIL format mein hai) ko OpenCV (BGR) format mein wapas convert karna
+    # 3. Cropped image ko OpenCV (BGR) format mein wapas convert karna
     img = cv2.cvtColor(np.array(cropped_img_pil), cv2.COLOR_RGB2BGR)
 
     st.header("3. Result")
@@ -89,7 +84,6 @@ if uploaded_file is not None:
     with col2:
         st.subheader("Extracted Print (PNG)")
         
-        # Baaki ka process ab CROP ki hui image par chalega
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         lower_range = np.array([h_min, s_min, v_min])
         upper_range = np.array([h_max, s_max, v_max])
@@ -106,11 +100,19 @@ if uploaded_file is not None:
 
         b, g, r = cv2.split(img)
         alpha = mask_inv
-        png_image = cv2.merge([b, g, r, alpha])
+        
+        # Original BGRA image (download ke liye)
+        png_image_bgra = cv2.merge([b, g, r, alpha])
+        
+        # --- YEH HAI NAYA FIX ---
+        # Streamlit mein display ke liye RGBA mein convert karein
+        png_image_rgba = cv2.cvtColor(png_image_bgra, cv2.COLOR_BGRA2RGBA)
+        # -----------------------
 
-        st.image(png_image, caption='Background hatane ke baad', use_column_width=True)
+        st.image(png_image_rgba, caption='Background hatane ke baad', use_column_width=True)
 
-        _, buf = cv2.imencode('.png', png_image)
+        # Download button original BGRA image ka istemal karega
+        _, buf = cv2.imencode('.png', png_image_bgra)
         st.download_button(
             label="Processed PNG Download Karein",
             data=buf,
