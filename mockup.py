@@ -7,7 +7,7 @@ from PIL import Image
 
 st.set_page_config(layout="wide")
 st.title("👕 T-Shirt Print Extractor")
-st.write("Pehle image upload karein, fir design ko crop karein, aur fir T-shirt ka rang select karein.")
+st.write("Pehle image upload karein, fir design ko close crop karein, aur fir T-shirt ka rang select karke background remove karein.")
 
 # --- Helper Functions (Rang Convert karne ke liye) ---
 def hex_to_rgb(hex_val):
@@ -46,8 +46,9 @@ v_min = max(0, v - v_tolerance)
 v_max = min(255, v + v_tolerance)
 
 st.sidebar.header("Noise Reduction Settings")
-open_iter = st.sidebar.slider('Opening Iterations', 0, 10, 1)
-close_iter = st.sidebar.slider('Closing Iterations', 0, 10, 2)
+st.sidebar.info("Ye sliders print ke kinaaron aur chhote spots ko saaf karne mein madad karte hain.")
+open_iter = st.sidebar.slider('Opening Iterations', 0, 10, 1) # Chhote holes bharne ke liye
+close_iter = st.sidebar.slider('Closing Iterations', 0, 10, 2) # Edges smooth karne ke liye
 
 # --- Main App ---
 uploaded_file = st.file_uploader("1. Apni T-shirt ki image upload karein", type=["jpg", "jpeg", "png"])
@@ -60,7 +61,7 @@ if uploaded_file is not None:
     img_to_crop_pil = Image.fromarray(img_to_crop_rgb)
 
     st.header("2. Design ko Crop Karein")
-    st.write("Box ko adjust karke design ko select karein. Cropper ke neeche result dikhega.")
+    st.write("Box ko adjust karke design ko close select karein. Faltu background hata dein.")
     
     # 2. CROPPER COMPONENT
     cropped_img_pil = st_cropper(
@@ -82,7 +83,7 @@ if uploaded_file is not None:
         st.image(cropped_img_pil, caption='Yeh hissa process hoga', use_column_width=True)
 
     with col2:
-        st.subheader("Extracted Print (PNG)")
+        st.subheader("Extracted Print (Transparent Background)")
         
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         lower_range = np.array([h_min, s_min, v_min])
@@ -99,23 +100,23 @@ if uploaded_file is not None:
         mask_inv = cv2.bitwise_not(mask)
 
         b, g, r = cv2.split(img)
-        alpha = mask_inv
+        alpha = mask_inv # Mask ko alpha channel bana diya
         
-        # Original BGRA image (download ke liye)
+        # Final image jiska background transparent hai (BGRA format mein)
         png_image_bgra = cv2.merge([b, g, r, alpha])
         
-        # --- YEH HAI NAYA FIX ---
         # Streamlit mein display ke liye RGBA mein convert karein
+        # st.image ko RGBA chahiye, BGR/BGRA nahi
         png_image_rgba = cv2.cvtColor(png_image_bgra, cv2.COLOR_BGRA2RGBA)
-        # -----------------------
-
+        
         st.image(png_image_rgba, caption='Background hatane ke baad', use_column_width=True)
 
-        # Download button original BGRA image ka istemal karega
+        # Download button ke liye bytes ko encode karein
         _, buf = cv2.imencode('.png', png_image_bgra)
+        
         st.download_button(
-            label="Processed PNG Download Karein",
-            data=buf,
+            label="🖼️ Processed PNG Download Karein",
+            data=buf.tobytes(), # <- Download button ke liye bytes mein convert kiya
             file_name="extracted_print.png",
             mime="image/png"
         )
