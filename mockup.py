@@ -4,10 +4,11 @@ import numpy as np
 import colorsys
 from streamlit_cropper import st_cropper
 from PIL import Image
+import io  # <- MOCKUP KO SAVE KARNE KE LIYE NAYA IMPORT
 
 st.set_page_config(layout="wide")
-st.title("👕 T-Shirt Print Extractor")
-st.write("Pehle image upload karein, fir design ko close crop karein, aur fir T-shirt ka rang select karke background remove karein.")
+st.title("👕 T-Shirt Print Extractor & Mockup Tool")
+st.write("Pehle image upload karein, design crop karein, background hatayein, aur fir use mockup par lagayein.")
 
 # --- Helper Functions (Rang Convert karne ke liye) ---
 def hex_to_rgb(hex_val):
@@ -38,17 +39,10 @@ h_tolerance = st.sidebar.slider('Hue Tolerance (Rang mein fark)', 0, 90, 15)
 s_tolerance = st.sidebar.slider('Saturation Tolerance (Feeka/Gehra)', 0, 127, 70)
 v_tolerance = st.sidebar.slider('Value Tolerance (Roshni/Andhera)', 0, 127, 70)
 
-h_min = max(0, h - h_tolerance)
-h_max = min(179, h + h_tolerance)
-s_min = max(0, s - s_tolerance)
-s_max = min(255, s + s_tolerance)
-v_min = max(0, v - v_tolerance)
-v_max = min(255, v + v_tolerance)
-
 st.sidebar.header("Noise Reduction Settings")
 st.sidebar.info("Ye sliders print ke kinaaron aur chhote spots ko saaf karne mein madad karte hain.")
-open_iter = st.sidebar.slider('Opening Iterations', 0, 10, 1) # Chhote holes bharne ke liye
-close_iter = st.sidebar.slider('Closing Iterations', 0, 10, 2) # Edges smooth karne ke liye
+open_iter = st.sidebar.slider('Opening Iterations', 0, 10, 1) 
+close_iter = st.sidebar.slider('Closing Iterations', 0, 10, 2)
 
 # --- Main App ---
 uploaded_file = st.file_uploader("1. Apni T-shirt ki image upload karein", type=["jpg", "jpeg", "png"])
@@ -75,50 +69,109 @@ if uploaded_file is not None:
     # 3. Cropped image ko OpenCV (BGR) format mein wapas convert karna
     img = cv2.cvtColor(np.array(cropped_img_pil), cv2.COLOR_RGB2BGR)
 
-    st.header("3. Result")
-    col1, col2 = st.columns(2)
+    st.header("3. Result (Extracted Print)")
+    
+    # --- Background Removal Logic ---
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    lower_range = np.array([h_min, s_min, v_min])
+    upper_range = np.array([h_max, s_max, v_max])
+    mask = cv2.inRange(hsv, lower_range, upper_range)
+    kernel = np.ones((3, 3), np.uint8)
+    if open_iter > 0:
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=open_iter)
+    if close_iter > 0:
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=close_iter)
+    mask_inv = cv2.bitwise_not(mask)
+    b, g, r = cv2.split(img)
+    alpha = mask_inv
+    png_image_bgra = cv2.merge([b, g, r, alpha])
+    png_image_rgba = cv2.cvtColor(png_image_bgra, cv2.COLOR_BGRA2RGBA)
+    # --- End of Background Removal ---
 
+    col1, col2 = st.columns(2)
     with col1:
         st.subheader("Aapki Cropped Image")
         st.image(cropped_img_pil, caption='Yeh hissa process hoga', use_column_width=True)
 
     with col2:
-        st.subheader("Extracted Print (Transparent Background)")
-        
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        lower_range = np.array([h_min, s_min, v_min])
-        upper_range = np.array([h_max, s_max, v_max])
-
-        mask = cv2.inRange(hsv, lower_range, upper_range)
-
-        kernel = np.ones((3, 3), np.uint8)
-        if open_iter > 0:
-            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=open_iter)
-        if close_iter > 0:
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=close_iter)
-
-        mask_inv = cv2.bitwise_not(mask)
-
-        b, g, r = cv2.split(img)
-        alpha = mask_inv # Mask ko alpha channel bana diya
-        
-        # Final image jiska background transparent hai (BGRA format mein)
-        png_image_bgra = cv2.merge([b, g, r, alpha])
-        
-        # Streamlit mein display ke liye RGBA mein convert karein
-        # st.image ko RGBA chahiye, BGR/BGRA nahi
-        png_image_rgba = cv2.cvtColor(png_image_bgra, cv2.COLOR_BGRA2RGBA)
-        
+        st.subheader("Extracted Print (Transparent)")
         st.image(png_image_rgba, caption='Background hatane ke baad', use_column_width=True)
 
-        # Download button ke liye bytes ko encode karein
         _, buf = cv2.imencode('.png', png_image_bgra)
-        
         st.download_button(
-            label="🖼️ Processed PNG Download Karein",
-            data=buf.tobytes(), # <- Download button ke liye bytes mein convert kiya
+            label="🖼️ Sirf Print Download Karein (PNG)",
+            data=buf.tobytes(),
             file_name="extracted_print.png",
             mime="image/png"
         )
+        
+    st.divider() # Ek line daal di taaki steps alag dikhein
+
+    # --- NAYA SECTION: MOCKUP ---
+    st.header("4. (Optional) Mockup par Lagayein")
+    mockup_file = st.file_uploader("Apni Mockup image (blank T-shirt, etc.) yahan upload karein", type=["jpg", "jpeg", "png"])
+
+    if mockup_file is not None:
+        # Design ko PIL format mein convert karna (paste karne ke liye)
+        design_pil = Image.fromarray(png_image_rgba)
+        
+        # Mockup ko PIL format mein kholna
+        mockup_pil = Image.open(mockup_file).convert("RGBA")
+
+        st.write("Design ka size aur position adjust karein:")
+        
+        m_col1, m_col2 = st.columns([1, 2]) # Pehla column chhota (sliders), doosra bada (image)
+
+        with m_col1:
+            # Design ka size adjust karne ke liye slider
+            max_width = mockup_pil.width
+            default_width = max_width // 3
+            design_width = st.slider("Design Ki Width", 50, max_width, default_width)
+            
+            # Aspect ratio maintain karte hue height calculate karna
+            w_percent = (design_width / float(design_pil.width))
+            h_size = int((float(design_pil.height) * float(w_percent)))
+            
+            # Design ko resize karna
+            try:
+                resized_design = design_pil.resize((design_width, h_size), Image.LANCZOS)
+            except ValueError:
+                # Agar height 0 ho jaaye toh
+                st.error("Width bahut chhoti hai.")
+                resized_design = design_pil # Error hone par original design use karein
+            
+            # Position adjust karne ke liye sliders
+            max_x = mockup_pil.width - design_width
+            max_y = mockup_pil.height - h_size
+            
+            x_pos = st.slider("Design X Position (Left/Right)", 0, max_x, max_x // 3)
+            y_pos = st.slider("Design Y Position (Up/Down)", 0, max_y, max_y // 3)
+
+        with m_col2:
+            st.subheader("Final Mockup Result")
+            
+            # Mockup ki ek copy banayein
+            final_mockup = mockup_pil.copy()
+            
+            # Design ko mockup par paste karein
+            # Teesra argument (resized_design) zaroori hai, 
+            # yeh PIL ko batata hai ki design ka alpha channel (transparency) istemal karna hai
+            final_mockup.paste(resized_design, (x_pos, y_pos), resized_design)
+            
+            # Final image dikhayein
+            st.image(final_mockup, caption='Aapka final mockup', use_column_width=True)
+            
+            # Final mockup ko download karne ke liye bytes mein convert karein
+            buf = io.BytesIO()
+            final_mockup.save(buf, format="PNG")
+            byte_data = buf.getvalue()
+
+            st.download_button(
+                label="🚀 Final Mockup Download Karein (PNG)",
+                data=byte_data,
+                file_name="final_mockup.png",
+                mime="image/png"
+            )
+
 else:
     st.info("Kripya shuru karne ke liye ek image file upload karein.")
